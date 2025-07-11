@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFFFF">
+    
+    <!-- 欢迎界面 -->
+    <LinearLayout 
+        android:id="@+id/welcome_layout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:background="#FFFFFF">
+        
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="欢迎使用学之舟"
+            android:textSize="24sp"
+            android:textColor="#000000"
+            android:layout_marginBottom="30dp"/>
+        
+        <Button
+            android:id="@+id/ope"
+            android:layout_width="200dp"
+            android:layout_height="wrap_content"
+            android:text="打开文件"
+            android:onClick="ope"
+            android:textSize="18sp"
+            android:textColor="#000000"/>
+    </LinearLayout>
+    
+    <!-- 文件浏览器界面（初始隐藏） -->
+    <LinearLayout
+        android:id="@+id/file_browser_layout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone">
+        
+        <!-- 当前路径显示 -->
+        <TextView
+            android:id="@+id/current_path"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="15dp"
+            android:background="#E0E0E0"
+            android:textColor="#000000"
+            android:textSize="16sp"
+            android:textStyle="normal"/>
+        
+        <!-- 文件列表-->
+        <ListView
+            android:id="@+id/file_list_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:divider="#CCCCCC"
+            android:dividerHeight="1dp"/>
+    </LinearLayout>
+</FrameLayout>
