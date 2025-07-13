@@ -1,21 +1,33 @@
-# 学之舟 - 安卓版
+# TheBoatOfStudyInAndroid
 
-## 程序目录结构
+## 目录结构
 ```
 boatofstudy/
 ├── app/
 │   ├── src/
 │   │   ├── main/
-│   │   │   ├── java/com/boatofstudy/knowledge/
-│   │   │   │   ├── MainActivity.java    # 主活动类
-│   │   │   │   ├── FrontendActivity.java # UI处理类
-│   │   │   │   ├── BackendController.java # 文件操作类
-│   │   │   │   └── TmltParser.java      # 文件解析类
-│   │   │   └── res/
-│   │   │       └── layout/
-│   │   │           └── main.xml         # 主界面布局
-│   │   └── AndroidManifest.xml
-│   └── build.gradle
+│   │   │   ├── java/
+│   │   │   │   ├── com/
+│   │   │   │   │   ├── boatofstudy/
+│   │   │   │   │   │   ├── knowledge/
+│   │   │   │   │   │   │   ├── MainActivity.java
+│   │   │   │   │   │   │   ├── BackendController.java
+│   │   │   │   │   │   │   ├── FrontendActivity.java
+│   │   │   │   │   │   │   ├── TmltParser.java
+│   │   │   ├── res/
+│   │   │   │   ├── layout/
+│   │   │   │   │   ├── main.xml
+│   ├── build.gradle
 ├── build.gradle
-└── settings.gradle
+├── settings.gradle
 ```
+
+## 文件说明
+- `.java`: Java源代码文件  
+- `.xml`: Android布局文件  
+- `.gradle`: Gradle构建配置文件  
+
+## 版权信息
+- 解释权、所有权、使用权归 **`雷酷工作室`** 所有
+- 未经许可，不得擅自修改或用于商业用途
+- `© 2025 雷酷工作室 版权所有`
