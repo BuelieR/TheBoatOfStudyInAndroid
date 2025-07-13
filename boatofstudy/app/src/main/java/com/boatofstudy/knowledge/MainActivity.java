@@ -11,6 +11,16 @@ import java.util.*;
 import android.util.*;
 import android.Manifest;
 import android.content.pm.PackageManager;
+import android.os.Environment;
+import android.widget.TabHost.*;
+import android.support.v4.content.ContextCompat; // 使用兼容库
+import android.support.v4.app.ActivityCompat;
+import android.annotation.*;
+import java.net.*;
+import java.lang.Process;
+import android.net.*;
+import android.provider.*;
+import android.service.autofill.*;
 
 public class MainActivity extends Activity {
 
@@ -23,23 +33,53 @@ public class MainActivity extends Activity {
     private List<String> pathList = new ArrayList<>();
     private String currentPath;
     private ArrayAdapter<String> fileAdapter;
-    
+    // 新增变量
     private static final int PERMISSION_REQUEST_CODE = 100;
     private int selectedPosition = -1; // 长按选中的位置
+
+    private TabHost tabHost; 
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.main);
         
-        // 获取设备存储根目录
-        currentPath = Environment.getExternalStorageDirectory().getAbsolutePath();
+        // 初始化底部导航
+        tabHost = (TabHost) findViewById(android.R.id.tabhost);
+        tabHost.setup();
+        
+        // 主页标签
+        TabSpec tab1 = tabHost.newTabSpec("tab1");
+        tab1.setIndicator("主页");
+        tab1.setContent(R.id.tab1);
+        tabHost.addTab(tab1);
+        
+        // 个人标签
+        TabSpec tab2 = tabHost.newTabSpec("tab2");
+        tab2.setIndicator("个人");
+        tab2.setContent(R.id.tab2);
+        tabHost.addTab(tab2);
+        
+        currentPath = getRootDirectoryPath();
         
         // 获取布局中的UI组件
         welcomeLayout = findViewById(R.id.welcome_layout);
         fileBrowserLayout = findViewById(R.id.file_browser_layout);
         currentPathView = findViewById(R.id.current_path);
-        fileListView = findViewById(R.id.file_list_view); // 匹配截图中的ID
+        fileListView = findViewById(R.id.file_list_view);
+        
+        // 设置文件列表适配器
+        fileAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, fileList) {
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                // 视图复用优化内存 [6,8](@ref)
+                View view = super.getView(position, convertView, parent);
+                TextView textView = (TextView) view.findViewById(android.R.id.text1);
+                textView.setSingleLine(true);
+                return view;
+            }
+        };
+        fileListView.setAdapter(fileAdapter);
         
         // 设置文件列表适配器
         fileAdapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, fileList);
@@ -47,11 +87,136 @@ public class MainActivity extends Activity {
         
         // 设置列表项点击监听器
         fileListView.setOnItemClickListener(new FileItemClickListener());
-        
     }
 
-    private Stack<String> pathHistory = new Stack<>(); // 新增路径历史栈
+    private Stack<String> pathHistory = new Stack<>();
 
+    // 重构的根目录获取方法
+    private String getRootDirectoryPath() {
+        File externalDir = Environment.getExternalStorageDirectory();
+        String rootPath = externalDir != null ? externalDir.getAbsolutePath() : "";
+        
+        // 特殊处理三星，华为等设备
+        if (rootPath.isEmpty() || !new File(rootPath).exists()) {
+            rootPath = System.getenv("EXTERNAL_STORAGE");
+            if (rootPath == null || !new File(rootPath).exists()) {
+                // 回退到系统根目录
+                rootPath = "/";
+            }
+        }
+        
+        // 确保路径格式正确
+        if (rootPath.endsWith("/")) {
+            rootPath = rootPath.substring(0, rootPath.length() - 1);
+        }
+        
+        return rootPath;
+    }
+
+    // 优化文件加载方法
+    private void listFiles(String path) {
+        fileList.clear();
+        pathList.clear();
+        
+        // 添加返回上级选项
+        if (!path.equals("/")) {
+            fileList.add("..");
+            pathList.add("..");
+        }
+        
+        File currentDir = new File(path);
+        File[] files = currentDir.listFiles();
+        
+        if (files != null) {
+            // 按照文件类型分组显示（先目录后文件）
+            List<File> directories = new ArrayList<>();
+            List<File> fileItems = new ArrayList<>();
+            
+            // 递归列出所有目录
+            for (File file : files) {
+                if (file.isDirectory()) {
+                    directories.add(file);
+                } else {
+                    fileItems.add(file);
+                }
+            }
+            
+            // 添加系统目录标记
+            for (File dir : directories) {
+                // 判断是否是系统目录
+                boolean isSystemDir = isSystemDirectory(dir);
+                String prefix = isSystemDir ? "⚙ " : "/";
+                
+                fileList.add(prefix + dir.getName());
+                pathList.add(dir.getAbsolutePath());
+            }
+            
+            // 添加文件项
+            for (File file : fileItems) {
+                fileList.add(file.getName());
+                pathList.add(file.getAbsolutePath());
+            }
+        } else {
+            // 特殊处理需要权限的系统目录
+            if (isProtectedSystemPath(path)) {
+                tryAccessProtectedDirectory(path);
+            } else {
+                Log.e("FileList", "无法访问目录: " + path);
+                Toast.makeText(this, "无法访问目录，可能无权限", Toast.LENGTH_SHORT).show();
+            }
+        }
+        
+        currentPathView.setText("当前路径: " + path);
+        fileAdapter.notifyDataSetChanged();
+    }
+    
+    // [新] 判断是否是系统关键目录
+    private boolean isSystemDirectory(File dir) {
+        String[] systemDirs = {"/system", "/proc", "/dev", "/sys", "/acct", "/cache", "/config"};
+        String path = dir.getAbsolutePath();
+        for (String sysDir : systemDirs) {
+            if (path.startsWith(sysDir)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    // [新] 判断受保护的系统路径
+    private boolean isProtectedSystemPath(String path) {
+        String[] protectedPaths = {"/system", "/proc", "/sys", "/dev"};
+        for (String protPath : protectedPaths) {
+            if (path.startsWith(protPath)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    // [新] 尝试访问受保护的目录
+    private void tryAccessProtectedDirectory(String path) {
+        // 使用低级API尝试访问
+        try {
+            Process process = Runtime.getRuntime().exec("ls " + path);
+            BufferedReader reader = new BufferedReader(
+                new InputStreamReader(process.getInputStream()));
+            
+            String line;
+            while ((line = reader.readLine()) != null) {
+                // 9. 特殊处理系统目录项
+                fileList.add("🔒 " + line);
+                pathList.add(path + "/" + line);
+            }
+            
+            process.waitFor();
+            reader.close();
+        } catch (Exception e) {
+            Log.e("SystemDirAccess", "访问系统目录失败: " + e.getMessage());
+            Toast.makeText(this, "需要Root权限访问系统目录", Toast.LENGTH_SHORT).show();
+        }
+    }
+    
+    // 处理特殊系统目录的点击
     private class FileItemClickListener implements AdapterView.OnItemClickListener {
         public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
             if (position >= 0 && position < pathList.size()) {
@@ -60,17 +225,91 @@ public class MainActivity extends Activity {
                 if ("..".equals(selectedPath)) {
                     handleBackDirectory();
                 } else {
-                    File file = new File(selectedPath);
-                    if (file.isDirectory()) {
-                        enterNewDirectory(selectedPath);
-                    } else if (selectedPath.endsWith(".tmlt")) {
-                        processTmltFile(selectedPath);
+                    // 检查是否受限系统目录项
+                    if (selectedPath.startsWith("🔒 ")) {
+                        String actualPath = selectedPath.substring(2);
+                        openRestrictedSystemDirectory(actualPath);
                     } else {
-                        Toast.makeText(MainActivity.this, "请选择.tmlt文件", Toast.LENGTH_SHORT).show();
+                        File file = new File(selectedPath);
+                        if (file.isDirectory()) {
+                            enterNewDirectory(selectedPath);
+                        } else if (selectedPath.endsWith(".tmlt")) {
+                            processTmltFile(selectedPath);
+                        } else {
+                            Toast.makeText(MainActivity.this, "请选择.tmlt文件", Toast.LENGTH_SHORT).show();
+                        }
                     }
                 }
             }
         }
+    }
+    
+    // [新] 打开受限制的系统目录
+    private void openRestrictedSystemDirectory(String path) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("系统目录访问");
+        builder.setMessage("访问此系统目录需要ROOT权限。\n可能破坏系统稳定性！");
+        
+		final String fpath = path;
+        // 设置PositiveButton的匿名内部类实现
+        builder.setPositiveButton("继续", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                try {
+                    // 获取 root 权限
+                    Process process = Runtime.getRuntime().exec("su");
+                    
+                    // 获取命令输出流
+                    OutputStream os = process.getOutputStream();
+                    OutputStreamWriter osw = new OutputStreamWriter(os);
+                    
+                    osw.write("cd " + fpath + "\n");
+                    osw.write("ls\n");
+                    osw.flush();
+                    osw.close();
+                    
+                    // 读取结果
+                    BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(process.getInputStream()));
+                    
+                    List<String> sysItems = new ArrayList<>();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        sysItems.add(line);
+                    }
+                    reader.close();
+                    
+                    showSystemDirectoryContents(fpath, sysItems);
+                    
+                } catch (Exception e) {
+                    // 显示Toast需要完整的调用
+                    Toast.makeText(
+                        MainActivity.this, 
+                        "ROOT访问失败: " + e.getMessage(), 
+                        Toast.LENGTH_SHORT
+                    ).show();
+                }
+            }
+        });
+        
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+    
+    // [新增] 显示系统目录内容
+    private void showSystemDirectoryContents(String path, List<String> contents) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("目录: ").append(path).append("\n\n");
+        
+        for (String item : contents) {
+            sb.append("• ").append(item).append("\n");
+        }
+        
+        new AlertDialog.Builder(this)
+            .setTitle("系统目录内容")
+            .setMessage(sb.toString())
+            .setPositiveButton("确定", null)
+            .show();
     }
     
     // 处理进入新目录
@@ -117,18 +356,75 @@ public class MainActivity extends Activity {
         Log.d("CacheClean", "清理上上层目录缓存: " + path);
     }
 
+
+    private boolean checkStoragePermission() {
+        // 检查读取和写入权限
+        int readPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE);
+        int writePermission = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        
+        if (readPermission != PackageManager.PERMISSION_GRANTED || 
+            writePermission != PackageManager.PERMISSION_GRANTED) {
+            
+            // 动态请求权限
+            ActivityCompat.requestPermissions(
+                this,
+                new String[]{
+                    Manifest.permission.READ_EXTERNAL_STORAGE,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE
+                },
+                PERMISSION_REQUEST_CODE
+            );
+            return false;
+        }
+        return true;
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, 
-            String[] permissions, int[] grantResults) {
+            @NonNull String[] permissions, 
+            @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        
         if (requestCode == PERMISSION_REQUEST_CODE) {
-            if (grantResults.length > 0 && 
-                grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            boolean allGranted = true;
+            
+            // 检查所有权限是否都被授予
+            for (int result : grantResults) {
+                if (result != PackageManager.PERMISSION_GRANTED) {
+                    allGranted = false;
+                    break; // 发现一个未授权即退出循环
+                }
+            }
+            
+            if (allGranted) {
+                // 权限全部授予，初始化文件浏览器
                 initFileBrowser();
             } else {
+                // 权限被拒绝，提示用户
                 Toast.makeText(this, "需要存储权限才能使用文件管理功能", Toast.LENGTH_LONG).show();
+                
+                // 可以根据需要添加再次请求的逻辑
+                showPermissionDeniedDialog();
             }
         }
+    }
+    
+    // 权限被拒绝时显示的对话框
+    private void showPermissionDeniedDialog() {
+        new AlertDialog.Builder(this)
+            .setTitle("权限被拒绝")
+            .setMessage("您拒绝了存储权限，这将导致文件管理功能无法使用。\n\n请进入应用设置手动开启权限。")
+            .setPositiveButton("去设置", new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialog, int which) {
+                    // 打开应用设置页面
+                    Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                    intent.setData(Uri.parse("package:" + getPackageName()));
+                    startActivity(intent);
+                }
+            })
+            .setNegativeButton("取消", null)
+            .show();
     }
 
     private void initFileBrowser() {
@@ -281,52 +577,14 @@ public class MainActivity extends Activity {
     
     // "打开文件"按钮点击事件
     public void ope(View view) {
+		checkStoragePermission();
+		
         // 显示文件浏览器界面，隐藏欢迎界面
         welcomeLayout.setVisibility(View.GONE);
         fileBrowserLayout.setVisibility(View.VISIBLE);
         
         // 列出初始目录文件
         listFiles(currentPath);
-    }
-    
-    // 列出目录中的文件
-    private void listFiles(String path) {
-        // 清除当前文件列表
-        fileList.clear();
-        pathList.clear();
-        
-        // 添加返回上级选项（..）
-        if (!path.equals("/")) {
-            fileList.add("..");
-            pathList.add(".."); // 特殊标记，表示返回上级
-        }
-        
-        File currentDir = new File(path);
-        File[] files = currentDir.listFiles();
-        
-        if (files != null) {
-            // 添加目录项（前面加/）
-            for (File file : files) {
-                if (file.isDirectory()) {
-                    fileList.add("/" + file.getName());
-                    pathList.add(file.getAbsolutePath());
-                }
-            }
-            
-            // 添加文件项
-            for (File file : files) {
-                if (!file.isDirectory()) {
-                    fileList.add(file.getName());
-                    pathList.add(file.getAbsolutePath());
-                }
-            }
-        }
-        
-        // 更新当前路径显示（匹配截图中的文本格式）
-        currentPathView.setText("当前路径: " + path);
-        
-        // 通知适配器数据已更新
-        fileAdapter.notifyDataSetChanged();
     }
     
     // 处理tmlt文件
@@ -374,7 +632,7 @@ public class MainActivity extends Activity {
                     continue;
                 }
                 
-                // 提取类名（去掉方括号）
+                // 提取类名
                 String className = classNameLine.substring(1, classNameLine.length() - 1);
                 result.append("类名: ").append(className).append("\n");
                 
@@ -454,12 +712,11 @@ public class MainActivity extends Activity {
         builder.create().show();
         builder.setPositiveButton("确定", new DialogButtonListener());
         builder.setNegativeButton("返回", new DialogButtonListener());
-        // ...
     }
     
     // 显示错误对话框
     private void showErrorDialog(String title, String message) {
-        // 创建简单错误提示对话框
+        // 创建简误提示对话框
         new AlertDialog.Builder(this)
             .setTitle(title)
             .setMessage(message)
@@ -472,17 +729,14 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
         if (fileBrowserLayout.getVisibility() == View.VISIBLE) {
             // 如果不在根目录，返回上级目录
-            if (!currentPath.equals(Environment.getExternalStorageDirectory().getPath())) {
-                File currentDir = new File(currentPath);
-                currentPath = currentDir.getParent();
-                listFiles(currentPath);
+            if (!currentPath.equals("/")) {
+                handleBackDirectory();
             } else {
                 // 在根目录时返回欢迎界面
                 welcomeLayout.setVisibility(View.VISIBLE);
                 fileBrowserLayout.setVisibility(View.GONE);
             }
         } else {
-            // 在欢迎界面时退出应用
             super.onBackPressed();
         }
     }

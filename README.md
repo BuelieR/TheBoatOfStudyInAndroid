@@ -19,3 +19,7 @@
     /build.gradle
     /settings.gradle
 ```
+**说明：**
+---
+`.java`:Java程序文件
+`.xml`:一般是布局文件（注意：）
